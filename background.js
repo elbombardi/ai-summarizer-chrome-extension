@@ -1,42 +1,34 @@
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'getPageContent' || request.action === 'getVideoTranscript') {
-        // Make the function asynchronous to use await
-        (async () => {
-            try {
-                const apiKey = await getApiKey();
-                if (!apiKey) {
-                    sendResponse({ error: "Gemini API key is not configured." });
+    // Make the function asynchronous to use await
+    (async () => {
+        try {
+            const apiKey = await getApiKey();
+            if (!apiKey) {
+                sendResponse({ error: "Gemini API key is not configured." });
+                return;
+            }
+
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+            // Both actions will now just send the URL to Gemini.
+            if (request.action === 'getPageContent' || request.action === 'getVideoTranscript') {
+                if (!tab.url || tab.url.startsWith('chrome://')) {
+                    sendResponse({ error: "Cannot summarize special browser pages or local files." });
                     return;
                 }
-
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-                await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    files: ['content.js']
-                });
-
-                // Once the script is injected, send it a message to retrieve the content
-                const contentResponse = await chrome.tabs.sendMessage(tab.id, { action: request.action });
-
-                if (!contentResponse || !contentResponse.content || contentResponse.content.trim() === '') {
-                     sendResponse({ error: "Could not retrieve content from the page. For a video, make sure the transcript is open." });
-                     return;
-                }
-
-                const summary = await getGeminiSummary(contentResponse.content, apiKey, request.action);
+                const summary = await getGeminiSummary(tab.url, apiKey, request.action);
                 sendResponse({ summary: summary });
-
-            } catch (e) {
-                console.error("Error in background.js:", e);
-                sendResponse({ error: e.message });
             }
-        })();
-        
-        // Indicates that the response will be sent asynchronously
-        return true; 
-    }
+
+        } catch (e) {
+            console.error("Error in background.js:", e);
+            sendResponse({ error: e.message });
+        }
+    })();
+    
+    // Indicates that the response will be sent asynchronously
+    return true; 
 });
 
 
@@ -51,27 +43,24 @@ function getApiKey() {
 
 
 // Function to call the Gemini API
-async function getGeminiSummary(text, apiKey, action) {
+// The 'input' parameter will now always be a URL
+async function getGeminiSummary(url, apiKey, action) {
     const model = 'gemini-2.5-flash-preview-05-20';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     let prompt;
-    if (action === 'getVideoTranscript') {
-        prompt = "Summarize the transcript of this video in English. Highlight the key points as a bulleted list:\n\n" + text;
-    } else {
-        prompt = "Make a concise and structured summary of the following web page in English. Start with an introductory sentence, then list the 3 to 5 most important points:\n\n" + text;
+    
+    // We adjust the prompt based on the context for better results.
+    if (action === 'getPageContent') {
+        prompt = `Provide a concise and structured summary of the content found at this URL: ${url}. Start with a brief introductory sentence, then list the 3 to 5 most important points as a bulleted list.`;
+    } else { // 'getVideoTranscript'
+        prompt = `Summarize the YouTube video at this URL: ${url}. Your summary should be based on the video's spoken content (transcript). Highlight the key points as a bulleted list.`;
     }
 
-    // To avoid overloading the API, limit the size of the text sent
-    const maxChars = 15000;
-    const truncatedText = text.substring(0, maxChars);
-    
+    // The payload now always uses the Google Search tool to allow Gemini to fetch the URL.
     const payload = {
-        contents: [{
-            parts: [{
-                text: prompt.replace('{text}', truncatedText)
-            }]
-        }]
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ "google_search": {} }], 
     };
 
     const response = await fetch(apiUrl, {
@@ -89,10 +78,16 @@ async function getGeminiSummary(text, apiKey, action) {
     const data = await response.json();
     
     try {
-       return data.candidates[0].content.parts[0].text;
+       // Check for text in the response
+       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+       if (!text) {
+           console.error("No summary text found in API response:", data);
+           throw new Error("The model did not return a summary. It might be unable to access the URL or the content may be blocked.");
+       }
+       return text;
     } catch(e) {
-       console.error("Unexpected API response:", data);
-       throw new Error("The API response structure has changed or is invalid.");
+       console.error("Unexpected API response structure:", data);
+       throw new Error(e.message || "The API response was invalid.");
     }
 }
 

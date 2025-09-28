@@ -1,3 +1,2 @@
 # ai-summarizer-chrome-extension
 
-AIzaSyAaFqRdvxwxwIwnHPxPglomZ_qzr2FT3r4
