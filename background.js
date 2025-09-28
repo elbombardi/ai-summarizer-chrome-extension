@@ -1,6 +1,10 @@
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // Make the function asynchronous to use await
+    // This extension now only handles one action: getVideoTranscript
+    if (request.action !== 'getVideoTranscript') {
+        return true; // Ignore other requests
+    }
+
     (async () => {
         try {
             const apiKey = await getApiKey();
@@ -11,15 +15,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-            // Both actions will now just send the URL to Gemini.
-            if (request.action === 'getPageContent' || request.action === 'getVideoTranscript') {
-                if (!tab.url || tab.url.startsWith('chrome://')) {
-                    sendResponse({ error: "Cannot summarize special browser pages or local files." });
-                    return;
-                }
-                const summary = await getGeminiSummary(tab.url, apiKey, request.action);
-                sendResponse({ summary: summary });
+            // Ensure we are on a YouTube video page
+            if (!tab.url || !tab.url.includes("youtube.com/watch")) {
+                sendResponse({ error: "This extension only works on YouTube video pages." });
+                return;
             }
+            
+            // Inject the content script to get the transcript's baseUrl
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['content.js']
+            });
+
+            // Request the transcriptBaseUrl from the content script
+            const contentResponse = await chrome.tabs.sendMessage(tab.id, { action: 'getVideoTranscript' });
+
+            // Check if the baseUrl was successfully retrieved
+            if (!contentResponse || !contentResponse.transcriptBaseUrl || contentResponse.transcriptBaseUrl.trim() === '') {
+                 sendResponse({ error: "Could not find a transcript URL. Please ensure captions are available for this video." });
+                 return;
+            }
+
+            // Fetch the XML transcript using the baseUrl
+            const xmlTranscript = await fetchXmlTranscript(contentResponse.transcriptBaseUrl);
+
+            // Parse the XML and get the full text
+            const fullTranscript = parseXmlTranscript(xmlTranscript);
+
+            if (!fullTranscript || fullTranscript.trim() === '') {
+                sendResponse({ error: "Failed to extract text from the transcript. It might be empty or malformed." });
+                return;
+            }
+
+            const summary = await getGeminiSummary(fullTranscript, apiKey);
+            sendResponse({ summary: summary });
 
         } catch (e) {
             console.error("Error in background.js:", e);
@@ -27,7 +56,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
     })();
     
-    // Indicates that the response will be sent asynchronously
+    // Indicates that the response will be sent asynchronously.
     return true; 
 });
 
@@ -41,26 +70,49 @@ function getApiKey() {
     });
 }
 
+// Function to fetch the XML transcript from the baseUrl
+async function fetchXmlTranscript(baseUrl) {
+    const response = await fetch(baseUrl);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch transcript XML: ${response.statusText}`);
+    }
+    return response.text();
+}
+
+// Function to parse the XML transcript content
+function parseXmlTranscript(xmlContent) {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
+    const textNodes = xmlDoc.querySelectorAll('text');
+    let fullTranscript = "";
+
+    textNodes.forEach(node => {
+        // Unescape HTML entities (like &amp; &lt;) and append text
+        const decodedText = decodeHtmlEntities(node.textContent || '');
+        fullTranscript += decodedText.trim() + " ";
+    });
+
+    return fullTranscript.trim();
+}
+
+// Helper function to decode HTML entities
+function decodeHtmlEntities(text) {
+    const textArea = document.createElement('textarea');
+    textArea.innerHTML = text;
+    return textArea.value;
+}
+
 
 // Function to call the Gemini API
-// The 'input' parameter will now always be a URL
-async function getGeminiSummary(url, apiKey, action) {
-    const model = 'gemini-2.5-flash-preview-05-20';
+// The 'input' parameter is always the transcript text
+async function getGeminiSummary(transcriptText, apiKey) {
+    const model = 'gemini-2.5-pro'; 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    let prompt;
+    const prompt = `Summarize the following YouTube video transcript in English. Highlight the key points as a bulleted list. Keep the summary concise and informative:\n\n` + transcriptText.substring(0, 30000); // Truncate to be safe
     
-    // We adjust the prompt based on the context for better results.
-    if (action === 'getPageContent') {
-        prompt = `Provide a concise and structured summary of the content found at this URL: ${url}. Start with a brief introductory sentence, then list the 3 to 5 most important points as a bulleted list.`;
-    } else { // 'getVideoTranscript'
-        prompt = `Summarize the YouTube video at this URL: ${url}. Your summary should be based on the video's spoken content (transcript). Highlight the key points as a bulleted list.`;
-    }
-
-    // The payload now always uses the Google Search tool to allow Gemini to fetch the URL.
     const payload = {
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ "google_search": {} }], 
+        contents: [{ parts: [{ text: prompt }] }]
     };
 
     const response = await fetch(apiUrl, {
@@ -82,7 +134,7 @@ async function getGeminiSummary(url, apiKey, action) {
        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
        if (!text) {
            console.error("No summary text found in API response:", data);
-           throw new Error("The model did not return a summary. It might be unable to access the URL or the content may be blocked.");
+           throw new Error("The model did not return a summary. The content may be blocked or inaccessible.");
        }
        return text;
     } catch(e) {

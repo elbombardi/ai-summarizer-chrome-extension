@@ -1,28 +1,28 @@
 {
     "manifest_version": 3,
-    "name": "AI Page Summarizer",
+    "name": "YouTube AI Summarizer",
     "version": "1.0",
-    "description": "Summarizes web pages and YouTube video transcripts using the Gemini API.",
-    "permissions": ["activeTab", "scripting", "storage"],
+    "description": "Summarizes YouTube video transcripts using the Gemini API.",
+    "permissions": [
+        "storage",
+        "activeTab",
+        "scripting"
+    ],
     "action": {
-      "default_popup": "popup.html",
-      "default_icon": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "images/icon16.png",
+            "48": "images/icon48.png",
+            "128": "images/icon128.png"
+        }
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "icons": {
         "16": "images/icon16.png",
         "48": "images/icon48.png",
         "128": "images/icon128.png"
-      }
-    },
-    "background": {
-      "service_worker": "background.js"
-    },
-    "icons": {
-      "16": "images/icon16.png",
-      "48": "images/icon48.png",
-      "128": "images/icon128.png"
-    },
-    "host_permissions": [
-      "https://*.googleapis.com/"
-    ]
-  }
-  
-  
+    }
+}
+
