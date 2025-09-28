@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Page Summarizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            width: 400px;
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-4">
+    <div class="space-y-4">
+        <div class="flex items-center space-x-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12h-1"/><path d="M13 15h-4"/><path d="M13 18h-4"/></svg>
+            <h1 class="text-xl font-bold">Gemini Page Summarizer</h1>
+        </div>
+
+        <div class="space-y-2">
+            <label for="apiKey" class="block text-sm font-medium">Gemini API Key</label>
+            <div class="flex space-x-2">
+                 <input type="password" id="apiKey" placeholder="Enter your API key here" class="flex-grow bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                 <button id="saveKey" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-md transition-colors duration-200">Save</button>
+            </div>
+             <p id="keyStatus" class="text-xs text-green-500 hidden">Key saved!</p>
+        </div>
+
+        <div class="flex space-x-2">
+            <button id="summarizePage" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-md transition-colors duration-200">
+                Summarize Page
+            </button>
+            <button id="summarizeVideo" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-md transition-colors duration-200">
+                Summarize YT Video
+            </button>
+        </div>
+
+        <div id="loading" class="hidden text-center py-4">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+            <p class="mt-2 text-sm">Generating summary...</p>
+        </div>
+
+        <div id="error" class="hidden bg-red-100 dark:bg-red-900 border border-red-400 text-red-700 dark:text-red-200 px-4 py-3 rounded-md" role="alert">
+            <strong class="font-bold">Error:</strong>
+            <span class="block sm:inline" id="errorMessage"></span>
+        </div>
+
+        <div id="summaryContainer" class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-inner hidden">
+            <h2 class="text-lg font-semibold mb-2">Summary:</h2>
+            <div id="summary" class="text-sm prose dark:prose-invert max-w-none"></div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
+
